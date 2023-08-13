@@ -444,7 +444,7 @@ def post_scrobble(
 		artists:list=[],
 		title:str="",
 		album:str=None,
-		albumartists:list=[],
+		albumartists:list=None,
 		duration:int=None,
 		length:int=None,
 		time:int=None,
@@ -470,7 +470,7 @@ def post_scrobble(
 	rawscrobble = {
 		'track_artists':(artist or []) + artists,
 		'track_title':title,
-		'album_name':album,
+		'album_title':album,
 		'album_artists':albumartists,
 		'scrobble_duration':duration,
 		'track_length':length,
@@ -478,7 +478,7 @@ def post_scrobble(
 	}
 
 	# for logging purposes, don't pass values that we didn't actually supply
-	rawscrobble = {k:rawscrobble[k] for k in rawscrobble if rawscrobble[k]}
+	rawscrobble = {k:rawscrobble[k] for k in rawscrobble if rawscrobble[k] is not None} # [] should be passed
 
 
 	result = database.incoming_scrobble(
@@ -494,19 +494,23 @@ def post_scrobble(
 			'artists':result['track']['artists'],
 			'title':result['track']['title']
 		},
-		'desc':f"Scrobbled {result['track']['title']} by {', '.join(result['track']['artists'])}"
+		'desc':f"Scrobbled {result['track']['title']} by {', '.join(result['track']['artists'])}",
+		'warnings':[]
 	}
 	if extra_kwargs:
-		responsedict['warnings'] = [
+		responsedict['warnings'] += [
 			{'type':'invalid_keyword_ignored','value':k,
 			'desc':"This key was not recognized by the server and has been discarded."}
 			for k in extra_kwargs
 		]
 	if artist and artists:
-		responsedict['warnings'] = [
+		responsedict['warnings'] += [
 			{'type':'mixed_schema','value':['artist','artists'],
 			'desc':"These two fields are meant as alternative methods to submit information. Use of both is discouraged, but works at the moment."}
 		]
+
+	if len(responsedict['warnings']) == 0: del responsedict['warnings']
+
 	return responsedict
 
 
@@ -515,7 +519,7 @@ def post_scrobble(
 @api.post("addpicture")
 @authenticated_function(alternate=api_key_correct,api=True)
 @catch_exceptions
-def add_picture(b64,artist:Multi=[],title=None):
+def add_picture(b64,artist:Multi=[],title=None,albumtitle=None):
 	"""Uploads a new image for an artist or track.
 
 	param string b64: Base 64 representation of the image
@@ -527,8 +531,10 @@ def add_picture(b64,artist:Multi=[],title=None):
 	for a in artist:
 		keys.append("artist",a)
 	if title is not None: keys.append("title",title)
+	elif albumtitle is not None: keys.append("albumtitle",albumtitle)
 	k_filter, _, _, _, _ = uri_to_internal(keys)
 	if "track" in k_filter: k_filter = k_filter["track"]
+	elif "album" in k_filter: k_filter = k_filter["album"]
 	url = images.set_image(b64,**k_filter)
 
 	return {
@@ -586,6 +592,7 @@ def search(**keys):
 
 	artists = database.db_search(query,type="ARTIST")
 	tracks = database.db_search(query,type="TRACK")
+	albums = database.db_search(query,type="ALBUM")
 
 
 
@@ -593,6 +600,7 @@ def search(**keys):
 	# also, shorter is better (because longer titles would be easier to further specify)
 	artists.sort(key=lambda x: ((0 if x.lower().startswith(query) else 1 if " " + query in x.lower() else 2),len(x)))
 	tracks.sort(key=lambda x: ((0 if x["title"].lower().startswith(query) else 1 if " " + query in x["title"].lower() else 2),len(x["title"])))
+	albums.sort(key=lambda x: ((0 if x["albumtitle"].lower().startswith(query) else 1 if " " + query in x["albumtitle"].lower() else 2),len(x["albumtitle"])))
 
 	# add links
 	artists_result = []
@@ -613,7 +621,17 @@ def search(**keys):
 		}
 		tracks_result.append(result)
 
-	return {"artists":artists_result[:max_],"tracks":tracks_result[:max_]}
+	albums_result = []
+	for al in albums:
+		result = {
+			'album': al,
+			'link': "/album?" + compose_querystring(internal_to_uri({"album":al})),
+			'image': images.get_album_image(al)
+		}
+		if not result['album']['artists']: result['album']['displayArtist'] = malojaconfig["DEFAULT_ALBUM_ARTIST"]
+		albums_result.append(result)
+
+	return {"artists":artists_result[:max_],"tracks":tracks_result[:max_],"albums":albums_result[:max_]}
 
 
 @api.post("newrule")
@@ -708,6 +726,16 @@ def edit_track(id,title):
 		"status":"success"
 	}
 
+@api.post("edit_album")
+@authenticated_function(api=True)
+@catch_exceptions
+def edit_album(id,albumtitle):
+	"""Internal Use Only"""
+	result = database.edit_album(id,{'albumtitle':albumtitle})
+	return {
+		"status":"success"
+	}
+
 
 @api.post("merge_tracks")
 @authenticated_function(api=True)
@@ -716,7 +744,8 @@ def merge_tracks(target_id,source_ids):
 	"""Internal Use Only"""
 	result = database.merge_tracks(target_id,source_ids)
 	return {
-		"status":"success"
+		"status":"success",
+		"desc":f"{', '.join(src['title'] for src in result['sources'])} were merged into {result['target']['title']}"
 	}
 
 @api.post("merge_artists")
@@ -726,8 +755,54 @@ def merge_artists(target_id,source_ids):
 	"""Internal Use Only"""
 	result = database.merge_artists(target_id,source_ids)
 	return {
-		"status":"success"
+		"status":"success",
+		"desc":f"{', '.join(src for src in result['sources'])} were merged into {result['target']}"
 	}
+
+@api.post("merge_albums")
+@authenticated_function(api=True)
+@catch_exceptions
+def merge_artists(target_id,source_ids):
+	"""Internal Use Only"""
+	result = database.merge_albums(target_id,source_ids)
+	return {
+		"status":"success",
+		"desc":f"{', '.join(src['albumtitle'] for src in result['sources'])} were merged into {result['target']['albumtitle']}"
+	}
+
+@api.post("associate_albums_to_artist")
+@authenticated_function(api=True)
+@catch_exceptions
+def associate_albums_to_artist(target_id,source_ids):
+	result = database.associate_albums_to_artist(target_id,source_ids)
+	if result:
+		return {
+			"status":"success",
+			"desc":f"{result['target']} was added as album artist of {', '.join(src['albumtitle'] for src in result['sources'])}"
+		}
+
+@api.post("associate_tracks_to_artist")
+@authenticated_function(api=True)
+@catch_exceptions
+def associate_tracks_to_artist(target_id,source_ids):
+	result = database.associate_tracks_to_artist(target_id,source_ids)
+	if result:
+		return {
+			"status":"success",
+			"desc":f"{result['target']} was added as artist for {', '.join(src['title'] for src in result['sources'])}"
+		}
+
+@api.post("associate_tracks_to_album")
+@authenticated_function(api=True)
+@catch_exceptions
+def associate_tracks_to_album(target_id,source_ids):
+	result = database.associate_tracks_to_album(target_id,source_ids)
+	if result:
+		return {
+			"status":"success",
+			"desc":f"{', '.join(src['title'] for src in result['sources'])} were added to {result['target']['albumtitle']}"
+		}
+
 
 @api.post("reparse_scrobble")
 @authenticated_function(api=True)

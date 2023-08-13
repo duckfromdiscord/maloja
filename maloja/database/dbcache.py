@@ -10,7 +10,7 @@ from doreah.regular import runhourly
 from doreah.logging import log
 
 from ..pkg_global.conf import malojaconfig
-
+from . import no_aux_mode
 
 
 if malojaconfig['USE_GLOBAL_CACHE']:
@@ -21,6 +21,7 @@ if malojaconfig['USE_GLOBAL_CACHE']:
 
 
 	@runhourly
+	@no_aux_mode
 	def maintenance():
 		print_stats()
 		trim_cache()
@@ -80,21 +81,22 @@ if malojaconfig['USE_GLOBAL_CACHE']:
 
 		return outer_func
 
+	@no_aux_mode
 	def invalidate_caches(scrobbletime=None):
+
 		cleared, kept = 0, 0
 		for k in cache.keys():
 			# VERY BIG TODO: differentiate between None as in 'unlimited timerange' and None as in 'time doesnt matter here'!
-			if scrobbletime is None or (k[3] is None or scrobbletime >= k[3]) and (k[4] is None or scrobbletime <= k[4]):
+			if scrobbletime is None or ((k[3] is None or scrobbletime >= k[3]) and (k[4] is None or scrobbletime <= k[4])):
 				cleared += 1
 				del cache[k]
 			else:
 				kept += 1
 		log(f"Invalidated {cleared} of {cleared+kept} DB cache entries")
 
-
+	@no_aux_mode
 	def invalidate_entity_cache():
 		entitycache.clear()
-
 
 	def trim_cache():
 		ramprct = psutil.virtual_memory().percent

@@ -4,7 +4,7 @@
 {% import 'snippets/links.jinja' as links %}
 
 {% block scripts %}
-	<script src="/rangeselect.js"></script>
+	<script src="/statselect.js"></script>
 	<script src="/edit.js"></script>
 	<script>
 		function scrobble(encodedtrack) {
@@ -28,6 +28,8 @@
 		{% include 'icons/merge.jinja' %}
 		{% include 'icons/merge_mark.jinja' %}
 		{% include 'icons/merge_cancel.jinja' %}
+		{% include 'icons/association_mark.jinja' %}
+		{% include 'icons/association_cancel.jinja' %}
 		<script>showValidMergeIcons();</script>
 	{% endif %}
 {% endblock %}
@@ -50,11 +52,11 @@
 			{% if adminmode %}
 			<div
 				class="changeable-image" data-uploader="b64=>upload('{{ encodedtrack }}',b64)"
-				style="background-image:url('{{ images.get_track_image(track) }}');"
+				style="background-image:url('{{ images.get_track_image(info.track) }}');"
 				title="Drag & Drop to upload new image"
 			></div>
 			{% else %}
-			<div style="background-image:url('{{ images.get_track_image(track) }}');">
+			<div style="background-image:url('{{ images.get_track_image(info.track) }}');">
 			</div>
 			{% endif %}
 		</td>
@@ -64,6 +66,9 @@
 				{{ awards.certs(track) }}
 				<span class="rank"><a href="/charts_tracks?max=100">#{{ info.position }}</a></span>
 				<br/>
+				{% if info.track.album %}
+				from {{ links.link(info.track.album) }}<br/>
+				{% endif %}
 
 			<p class="stats">
 				{% if adminmode %}<button type="button" onclick="scrobble('{{ encodedtrack }}')">Scrobble now</button>{% endif %}
@@ -91,8 +96,8 @@
 			<br/>
 			{% for r in xranges %}
 			<span
-				onclick="showRangeManual('pulse','{{ r.identifier }}')"
-				class="stat_selector_pulse selector_pulse_{{ r.identifier }}"
+				onclick="showStatsManual('pulseperformancecombined','{{ r.identifier }}')"
+				class="stat_selector_pulseperformancecombined selector_pulseperformancecombined_{{ r.identifier }}"
 				style="{{ 'opacity:0.5;' if initialrange==r.identifier else '' }}">
 				{{ r.localisation }}
 			</span>
@@ -104,7 +109,7 @@
 			{% for r in xranges %}
 
 			<span
-				class="stat_module_pulse pulse_{{ r.identifier }}"
+				class="stat_module_pulseperformancecombined pulseperformancecombined_{{ r.identifier }}"
 				style="{{ 'display:none;' if initialrange!=r.identifier else '' }}"
 				>
 
@@ -121,8 +126,8 @@
 			<br/>
 			{% for r in xranges %}
 				<span
-					onclick="showRangeManual('pulse','{{ r.identifier }}')"
-					class="stat_selector_pulse selector_pulse_{{ r.identifier }}"
+					onclick="showStatsManual('pulseperformancecombined','{{ r.identifier }}')"
+					class="stat_selector_pulseperformancecombined selector_pulseperformancecombined_{{ r.identifier }}"
 					style="{{ 'opacity:0.5;' if initialrange==r.identifier else '' }}">
 					{{ r.localisation }}
 				</span>
@@ -134,7 +139,7 @@
 			{% for r in xranges %}
 
 			<span
-				class="stat_module_pulse pulse_{{ r.identifier }}"
+				class="stat_module_pulseperformancecombined pulseperformancecombined_{{ r.identifier }}"
 				style="{{ 'display:none;' if initialrange!=r.identifier else '' }}"
 				>
 
@@ -152,7 +157,7 @@
 
 <h2><a href='{{ mlj_uri.create_uri("/scrobbles",filterkeys) }}'>Last Scrobbles</a></h2>
 
-{% with amountkeys = {"perpage":15,"page":0} %}
+{% with amountkeys = {"perpage":16,"page":0} %}
 {% include 'partials/scrobbles.jinja' %}
 {% endwith %}
 
