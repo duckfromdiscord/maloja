@@ -1,10 +1,9 @@
 import os
+import shutil
 
 from importlib import resources
-try:
-	from setuptools import distutils
-except ImportError:
-	import distutils
+from pathlib import PosixPath
+
 from doreah.io import col, ask, prompt
 
 from .pkg_global.conf import data_dir, dir_settings, malojaconfig, auth
@@ -22,20 +21,26 @@ ext_apikeys = [
 
 
 def copy_initial_local_files():
-	with resources.files("maloja") / 'data_files' as folder:
-		for cat in dir_settings:
-			if dir_settings[cat] is None:
-				continue
+	data_file_source = resources.files("maloja") / 'data_files'
+	for cat in dir_settings:
+		if dir_settings[cat] is None:
+			continue
+		if cat == 'config' and malojaconfig.readonly:
+			continue
 
-			if cat == 'config' and malojaconfig.readonly:
-				continue
+		# to avoid permission problems with the root dir
+		for subfolder in os.listdir(data_file_source / cat):
+			src = data_file_source / cat / subfolder
+			dst = PosixPath(dir_settings[cat]) / subfolder
+			if os.path.isdir(src):
+				shutil.copytree(src, dst, dirs_exist_ok=True)
 
-			distutils.dir_util.copy_tree(os.path.join(folder,cat),dir_settings[cat],update=False)
 
 charset = list(range(10)) + list("abcdefghijklmnopqrstuvwxyz") + list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
 def randomstring(length=32):
 	import random
 	return "".join(str(random.choice(charset)) for _ in range(length))
+
 
 def setup():
 
@@ -51,10 +56,11 @@ def setup():
 				print(f"\tCurrently not using a {col['red'](keyname)} for image display.")
 			elif key is None or key == "ASK":
 				if malojaconfig.readonly:
-					continue
-				promptmsg = f"\tPlease enter your {col['gold'](keyname)}. If you do not want to use one at this moment, simply leave this empty and press Enter."
-				key = prompt(promptmsg,types=(str,),default=False,skip=SKIP)
-				malojaconfig[k] = key
+					print(f"\tCurrently not using a {col['red'](keyname)} for image display - config is read only.")
+				else:
+					promptmsg = f"\tPlease enter your {col['gold'](keyname)}. If you do not want to use one at this moment, simply leave this empty and press Enter."
+					key = prompt(promptmsg,types=(str,),default=False,skip=SKIP)
+					malojaconfig[k] = key
 			else:
 				print(f"\t{col['lawngreen'](keyname)} found.")
 
